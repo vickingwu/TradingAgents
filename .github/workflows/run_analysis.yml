@@ -1,0 +1,91 @@
+name: TradingAgents Analysis
+
+on:
+  workflow_dispatch:
+    inputs:
+      ticker:
+        description: 'Stock ticker (e.g. NVDA, AAPL, TSLA)'
+        required: true
+        default: 'NVDA'
+      analysis_date:
+        description: 'Analysis date (YYYY-MM-DD, leave empty for today)'
+        required: false
+        default: ''
+      llm_provider:
+        description: 'LLM Provider'
+        required: true
+        default: 'openai'
+        type: choice
+        options:
+          - openai
+          - anthropic
+          - google
+          - deepseek
+      deep_think_llm:
+        description: 'Deep thinking model name'
+        required: true
+        default: 'gpt-5.4-mini'
+      quick_think_llm:
+        description: 'Quick thinking model name'
+        required: true
+        default: 'gpt-5.4-mini'
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt python-dotenv
+
+      - name: Run TradingAgents Analysis
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          TICKER: ${{ github.event.inputs.ticker }}
+          ANALYSIS_DATE: ${{ github.event.inputs.analysis_date }}
+          LLM_PROVIDER: ${{ github.event.inputs.llm_provider }}
+          DEEP_THINK_LLM: ${{ github.event.inputs.deep_think_llm }}
+          QUICK_THINK_LLM: ${{ github.event.inputs.quick_think_llm }}
+        run: python run_ci.py 2>&1 | tee analysis_report.txt
+
+      - name: Send email report
+        if: always()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.qq.com
+          server_port: 465
+          secure: true
+          username: ${{ secrets.EMAIL_USERNAME }}
+          password: ${{ secrets.EMAIL_PASSWORD }}
+          subject: "TradingAgents Report - ${{ github.event.inputs.ticker }} - ${{ github.run_id }}"
+          to: "[email]"
+          from: ${{ secrets.EMAIL_USERNAME }}
+          body: |
+            TradingAgents Analysis Report
+            ==============================
+            Ticker: ${{ github.event.inputs.ticker }}
+            Date: ${{ github.event.inputs.analysis_date }}
+            Provider: ${{ github.event.inputs.llm_provider }}
+            Models: ${{ github.event.inputs.deep_think_llm }} / ${{ github.event.inputs.quick_think_llm }}
+
+            See attached file for full report.
+          attachments: analysis_report.txt
+
+      - name: Upload report artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: analysis-report
+          path: analysis_report.txt
