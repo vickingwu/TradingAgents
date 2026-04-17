@@ -62,26 +62,67 @@ jobs:
 
       - name: Send email report
         if: always()
-        uses: dawidd6/action-send-mail@v3
-        with:
-          server_address: smtp.qq.com
-          server_port: 465
-          secure: true
-          username: ${{ secrets.EMAIL_USERNAME }}
-          password: ${{ secrets.EMAIL_PASSWORD }}
-          subject: "TradingAgents Report - ${{ github.event.inputs.ticker }} - ${{ github.run_id }}"
-          to: "[email]"
-          from: ${{ secrets.EMAIL_USERNAME }}
-          body: |
-            TradingAgents Analysis Report
-            ==============================
-            Ticker: ${{ github.event.inputs.ticker }}
-            Date: ${{ github.event.inputs.analysis_date }}
-            Provider: ${{ github.event.inputs.llm_provider }}
-            Models: ${{ github.event.inputs.deep_think_llm }} / ${{ github.event.inputs.quick_think_llm }}
+        env:
+          EMAIL_SENDER: ${{ secrets.EMAIL_SENDER }}
+          EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+          EMAIL_RECEIVERS: ${{ secrets.EMAIL_RECEIVERS }}
+          TICKER: ${{ github.event.inputs.ticker }}
+          ANALYSIS_DATE: ${{ github.event.inputs.analysis_date }}
+          LLM_PROVIDER: ${{ github.event.inputs.llm_provider }}
+          DEEP_THINK_LLM: ${{ github.event.inputs.deep_think_llm }}
+          QUICK_THINK_LLM: ${{ github.event.inputs.quick_think_llm }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          python3 - <<'PYEOF'
+          import smtplib, ssl, os
+          from email.mime.multipart import MIMEMultipart
+          from email.mime.text import MIMEText
+          from email.mime.base import MIMEBase
+          from email import encoders
 
-            See attached file for full report.
-          attachments: analysis_report.txt
+          sender = os.environ.get("EMAIL_SENDER", "")
+          password = os.environ.get("EMAIL_PASSWORD", "")
+          receivers = os.environ.get("EMAIL_RECEIVERS", sender)
+          if not sender or not password:
+              print("⚠️ EMAIL_SENDER or EMAIL_PASSWORD not set, skipping email.")
+              exit(0)
+
+          receiver_list = [r.strip() for r in receivers.split(",") if r.strip()]
+          ticker = os.environ.get("TICKER", "")
+          analysis_date = os.environ.get("ANALYSIS_DATE", "")
+          provider = os.environ.get("LLM_PROVIDER", "")
+          deep_llm = os.environ.get("DEEP_THINK_LLM", "")
+          quick_llm = os.environ.get("QUICK_THINK_LLM", "")
+          run_id = os.environ.get("RUN_ID", "")
+
+          msg = MIMEMultipart()
+          msg["From"] = sender
+          msg["To"] = ", ".join(receiver_list)
+          msg["Subject"] = f"TradingAgents Report - {ticker} - {run_id}"
+
+          body = f"TradingAgents Analysis Report\n==============================\nTicker: {ticker}\nDate: {analysis_date}\nProvider: {provider}\nModels: {deep_llm} / {quick_llm}\nRun ID: {run_id}\n\nSee attached file for full report."
+          msg.attach(MIMEText(body, "plain", "utf-8"))
+
+          report_path = "analysis_report.txt"
+          if os.path.exists(report_path):
+              with open(report_path, "rb") as f:
+                  part = MIMEBase("application", "octet-stream")
+                  part.set_payload(f.read())
+                  encoders.encode_base64(part)
+                  part.add_header("Content-Disposition", f"attachment; filename={report_path}")
+                  msg.attach(part)
+          else:
+              print("⚠️ analysis_report.txt not found, sending without attachment.")
+
+          context = ssl.create_default_context()
+          print(f"Connecting to smtp.qq.com:465 ...")
+          with smtplib.SMTP_SSL("smtp.qq.com", 465, context=context, timeout=60) as server:
+              print("Connected, logging in ...")
+              server.login(sender, password)
+              print("Logged in, sending ...")
+              server.sendmail(sender, receiver_list, msg.as_string())
+              print("✅ Email sent successfully!")
+          PYEOF
 
       - name: Upload report artifact
         if: always()
