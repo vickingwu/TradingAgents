@@ -14,21 +14,21 @@ on:
       llm_provider:
         description: 'LLM Provider'
         required: true
-        default: 'openai'
+        default: 'google'
         type: choice
         options:
+          - google
           - openai
           - anthropic
-          - google
           - deepseek
       deep_think_llm:
         description: 'Deep thinking model name'
         required: true
-        default: 'gpt-5.4-mini'
+        default: 'gemini-2.5-flash'
       quick_think_llm:
         description: 'Quick thinking model name'
         required: true
-        default: 'gpt-5.4-mini'
+        default: 'gemini-2.5-flash'
 
 jobs:
   analyze:
